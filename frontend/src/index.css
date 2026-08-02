@@ -96,7 +96,7 @@ input {
   padding: 6px 10px;
 }
 
-/* --- layout: sidebar fica à direita --- */
+/* --- layout: sidebar fica à esquerda --- */
 
 .layout {
   display: flex;
@@ -113,7 +113,7 @@ input {
   width: 200px;
   flex-shrink: 0;
   background: var(--bg-elevated);
-  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
   padding: 24px 16px;
   display: flex;
   flex-direction: column;
@@ -167,7 +167,7 @@ input {
   display: flex;
   flex-direction: column;
   gap: 32px;
-  max-width: 1200px;
+  width: 100%;
 }
 
 .page-header {
@@ -327,6 +327,21 @@ input {
 }
 
 /* --- tabela --- */
+
+.table-wrap {
+  width: 100%;
+  min-width: 0;
+}
+
+.table-scroll-top {
+  overflow-x: auto;
+  overflow-y: hidden;
+  height: 16px;
+}
+
+.table-scroll-top > div {
+  height: 1px;
+}
 
 .table-scroll {
   overflow-x: auto;

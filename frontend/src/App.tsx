@@ -7,6 +7,7 @@ import { FolderPage } from './pages/FolderPage'
 export function App() {
   return (
     <div className="layout">
+      <Sidebar />
       <main className="content">
         <Routes>
           <Route path="/" element={<DashboardPage />} />
@@ -14,7 +15,6 @@ export function App() {
           <Route path="/folders/:folderId" element={<FolderPage />} />
         </Routes>
       </main>
-      <Sidebar />
     </div>
   )
 }
