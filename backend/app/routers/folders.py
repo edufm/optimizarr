@@ -76,8 +76,12 @@ def get_folder_files(folder_id: str) -> FolderFilesOut:
 @router.post("/folders/{folder_id}/analyze", status_code=202)
 def analyze_folder(folder_id: str) -> JobCreated:
     folder = _get_folder_or_404(folder_id)
+    settings = state.get_settings()
     try:
-        job = job_manager.manager.launch_analyze(folder_id, folder["path"])
+        job = job_manager.manager.launch_analyze(
+            folder_id, folder["path"],
+            resolution=settings["resolution"], fps=settings["fps"],
+        )
     except job_manager.JobConflict:
         raise HTTPException(409, "pasta já tem job ativo")
     return JobCreated(job_id=job.id, status=job.status)

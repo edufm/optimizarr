@@ -59,9 +59,11 @@ class JobManager:
 
     # --- API pública -----------------------------------------------------
 
-    def launch_analyze(self, folder_id: str, folder_path: str) -> Job:
+    def launch_analyze(self, folder_id: str, folder_path: str,
+                        resolution: int, fps: int) -> Job:
         cmd = [sys.executable, str(cfg.ANALYZE_SCRIPT), folder_path,
-               "--csv", str(cfg.CSV_DIR / f"{folder_id}.csv")]
+               "--csv", str(cfg.CSV_DIR / f"{folder_id}.csv"),
+               "--resolution", str(resolution), "--fps", str(fps)]
         with self._lock:
             if folder_id in self._active_by_folder:
                 raise JobConflict(folder_id)

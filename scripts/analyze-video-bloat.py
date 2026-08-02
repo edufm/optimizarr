@@ -13,12 +13,23 @@ detalhe/movimento):
   - bpp ~0.04  -> já eficiente, pouco ganho esperado com HEVC
   - bpp ~0.54  -> muito acima do necessário, ganho grande esperado
 
+A estimativa de tamanho final considera também o teto de resolução/fps que
+seria aplicado por transcode-1080p-hevc.sh (--resolution/--fps): pra fontes
+acima desse teto, o cálculo já assume o downscale/fps-cap real, não só o
+ganho de eficiência do codec — senão a estimativa fica conservadora demais
+pra fontes muito acima da resolução/fps-alvo.
+
 Uso:
   analyze-video-bloat.py <diretorio> [--csv saida.csv] [--min-savings N]
+                         [--resolution N] [--fps N]
 
   --min-savings N   % mínimo de redução estimada pra considerar "vale a pena"
                      (padrão 20)
   --csv arquivo      também exporta a tabela completa em CSV
+  --resolution N    teto do lado curto em pixels usado na estimativa, mesmo
+                     significado do transcode-1080p-hevc.sh (padrão 1080)
+  --fps N           fps-alvo usado na estimativa, mesmo significado do
+                     transcode-1080p-hevc.sh (padrão 30)
 """
 
 import argparse
@@ -66,7 +77,7 @@ def parse_fps(s: str):
         return None
 
 
-def analyze_file(path: Path):
+def analyze_file(path: Path, resolution: int, long_edge: int, fps_target: float):
     data = ffprobe(path)
     if not data or "format" not in data:
         return None
@@ -106,8 +117,17 @@ def analyze_file(path: Path):
     pixels = width * height
     bpp = video_bitrate / (pixels * fps)
 
-    est_bitrate_x265 = min(video_bitrate, TARGET_BPP_X265 * pixels * fps)
-    est_bitrate_nvenc = min(video_bitrate, TARGET_BPP_NVENC * pixels * fps)
+    # pixels/fps "efetivos" pós-transcode: mesma lógica do scale filter e do
+    # FPS_ARGS em transcode-1080p-hevc.sh — decrease-only (nunca faz upscale),
+    # aspect ratio preservado, e só força fps pra baixo se a fonte estiver bem
+    # acima do alvo (>= 1.5x).
+    short_edge_src, long_edge_src = (height, width) if width > height else (width, height)
+    scale = min(1.0, resolution / short_edge_src, long_edge / long_edge_src)
+    effective_pixels = pixels * scale * scale
+    effective_fps = fps_target if fps >= fps_target * 1.5 else fps
+
+    est_bitrate_x265 = min(video_bitrate, TARGET_BPP_X265 * effective_pixels * effective_fps)
+    est_bitrate_nvenc = min(video_bitrate, TARGET_BPP_NVENC * effective_pixels * effective_fps)
 
     est_video_size_x265 = est_bitrate_x265 * duration / 8
     est_video_size_nvenc = est_bitrate_nvenc * duration / 8
@@ -161,7 +181,13 @@ def main():
     ap.add_argument("--min-savings", type=float, default=20.0)
     ap.add_argument("--exclude", action="append", default=[],
                      help="nome de pasta a ignorar (pode repetir), ex: --exclude downloads --exclude musicas")
+    ap.add_argument("--resolution", type=int, default=1080,
+                     help="teto do lado curto em pixels usado na estimativa (padrão 1080)")
+    ap.add_argument("--fps", type=float, default=30,
+                     help="fps-alvo usado na estimativa (padrão 30)")
     args = ap.parse_args()
+
+    long_edge = round(args.resolution * 16 / 9)
 
     root = Path(args.dir)
     excludes = set(args.exclude)
@@ -174,12 +200,14 @@ def main():
         if p.suffix.lower() in VIDEO_EXTS and p.is_file() and not is_excluded(p)
     )
 
-    print(f"Analisando {len(files)} arquivos em {root}...\n", file=sys.stderr)
+    print(f"Analisando {len(files)} arquivos em {root}...", file=sys.stderr)
+    print(f"Alvo da estimativa: resolução {args.resolution}p (lado longo {long_edge}), fps {args.fps}.\n",
+          file=sys.stderr)
 
     results = []
     for i, f in enumerate(files, 1):
         print(f"\r[{i}/{len(files)}] {f.name[:60]}", end="", file=sys.stderr, flush=True)
-        r = analyze_file(f)
+        r = analyze_file(f, args.resolution, long_edge, args.fps)
         if r:
             results.append(r)
     print(file=sys.stderr)
@@ -209,10 +237,11 @@ def main():
     print(f"Vale a pena recomprimir (>= {args.min_savings:.0f}% de ganho estimado): {len(worth_it)} arquivos")
     print(f"Ganho baixo / já eficiente: {len(marginal)} arquivos")
     print()
-    print(f"Tamanho estimado após libx265 (CPU) nos arquivos que valem a pena: {human(total_est_x265)} "
-          f"(economia de {human(total_size - total_est_x265)}, {100*(1-total_est_x265/total_size):.0f}%)")
-    print(f"Tamanho estimado após hevc_nvenc (GPU) nos arquivos que valem a pena: {human(total_est_nvenc)} "
-          f"(economia de {human(total_size - total_est_nvenc)}, {100*(1-total_est_nvenc/total_size):.0f}%)")
+    if total_size > 0:
+        print(f"Tamanho estimado após libx265 (CPU) nos arquivos que valem a pena: {human(total_est_x265)} "
+              f"(economia de {human(total_size - total_est_x265)}, {100*(1-total_est_x265/total_size):.0f}%)")
+        print(f"Tamanho estimado após hevc_nvenc (GPU) nos arquivos que valem a pena: {human(total_est_nvenc)} "
+              f"(economia de {human(total_size - total_est_nvenc)}, {100*(1-total_est_nvenc/total_size):.0f}%)")
     print()
     print(f"Tempo estimado CPU (libx265, ~{SPEED_X265}x tempo real): "
           f"{total_duration_worth_it / SPEED_X265 / 3600:.1f} horas")
