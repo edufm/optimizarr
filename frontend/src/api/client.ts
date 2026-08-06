@@ -1,4 +1,5 @@
 import type {
+  Calibration,
   Dashboard,
   Folder,
   FolderFiles,
@@ -47,6 +48,13 @@ export const api = {
     request<JobCreated>(`/folders/${id}/files/optimize`, {
       method: 'POST',
       body: JSON.stringify({ path }),
+    }),
+
+  getCalibration: () => request<Calibration | null>('/calibration'),
+  runSampleTest: (inputPath: string, outputDir: string) =>
+    request<JobCreated>('/sample/test', {
+      method: 'POST',
+      body: JSON.stringify({ input_path: inputPath, output_dir: outputDir }),
     }),
 
   getJob: (id: string) => request<Job>(`/jobs/${id}`),

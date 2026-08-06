@@ -21,12 +21,12 @@ export function FolderSummaryCard({ folder }: { folder: FolderSummary }) {
             <span className="stat-value">{formatBytes(folder.current_size_bytes!)}</span>
           </div>
           <div className="stat">
-            <span className="stat-label">Estimado (x265)</span>
-            <span className="stat-value">{formatBytes(folder.estimated_size_x265_bytes!)}</span>
+            <span className="stat-label">Estimado</span>
+            <span className="stat-value">{formatBytes(folder.estimated_size_bytes!)}</span>
           </div>
           <div className="stat">
             <span className="stat-label">Economia</span>
-            <span className="stat-value stat-highlight">{formatPercent(folder.savings_x265_pct!)}</span>
+            <span className="stat-value stat-highlight">{formatPercent(folder.savings_pct!)}</span>
           </div>
           <div className="stat">
             <span className="stat-label">Arquivos</span>

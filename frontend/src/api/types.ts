@@ -11,10 +11,25 @@ export interface Folder {
   csv: CsvInfo
 }
 
+export type Encoder = 'cpu' | 'nvenc'
+
 export interface Settings {
   resolution: number
   fps: number
-  crf: number
+  encoder: Encoder
+  quality: number
+}
+
+export interface Calibration {
+  target_bpp: number
+  speed_factor: number
+  measured_at: string
+  encoder: Encoder
+  quality: number
+  resolution: number
+  fps: number
+  sample_input: string
+  sample_output: string
 }
 
 export interface DiskUsage {
@@ -33,10 +48,8 @@ export interface FolderSummary {
   generated_at: string | null
   file_count: number | null
   current_size_bytes: number | null
-  estimated_size_x265_bytes: number | null
-  savings_x265_pct: number | null
-  estimated_size_nvenc_bytes: number | null
-  savings_nvenc_pct: number | null
+  estimated_size_bytes: number | null
+  savings_pct: number | null
 }
 
 export interface Dashboard {
@@ -54,10 +67,8 @@ export interface FileRow {
   duration: number
   size: number
   bpp: number
-  est_size_x265: number
-  est_size_nvenc: number
-  savings_x265: number
-  savings_nvenc: number
+  est_size: number
+  savings: number
   gb_per_hour: number
   profile: string
   pix_fmt: string
@@ -73,7 +84,7 @@ export interface FolderFiles {
   rows: FileRow[]
 }
 
-export type JobType = 'analyze' | 'optimize'
+export type JobType = 'analyze' | 'optimize' | 'sample'
 export type JobStatus = 'queued' | 'running' | 'succeeded' | 'failed'
 
 export interface Job {
