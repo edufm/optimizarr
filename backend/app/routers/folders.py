@@ -77,10 +77,13 @@ def get_folder_files(folder_id: str) -> FolderFilesOut:
 def analyze_folder(folder_id: str) -> JobCreated:
     folder = _get_folder_or_404(folder_id)
     settings = state.get_settings()
+    calibration = state.get_calibration()
     try:
         job = job_manager.manager.launch_analyze(
             folder_id, folder["path"],
             resolution=settings["resolution"], fps=settings["fps"],
+            target_bpp=calibration["target_bpp"] if calibration else None,
+            speed_factor=calibration["speed_factor"] if calibration else None,
         )
     except job_manager.JobConflict:
         raise HTTPException(409, "pasta já tem job ativo")
@@ -103,7 +106,8 @@ def optimize_file(folder_id: str, body: OptimizeRequest) -> JobCreated:
     try:
         job = job_manager.manager.launch_optimize(
             folder_id, body.path,
-            resolution=settings["resolution"], fps=settings["fps"], crf=settings["crf"],
+            resolution=settings["resolution"], fps=settings["fps"],
+            encoder=settings["encoder"], quality=settings["quality"],
         )
     except job_manager.JobConflict:
         raise HTTPException(409, "pasta já tem job ativo")

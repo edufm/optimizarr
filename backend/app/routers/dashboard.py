@@ -31,10 +31,8 @@ def get_dashboard() -> DashboardOut:
                 id=folder_id, path=folder["path"], label=label, has_csv=True,
                 generated_at=agg["generated_at"], file_count=agg["file_count"],
                 current_size_bytes=agg["current_size_bytes"],
-                estimated_size_x265_bytes=agg["estimated_size_x265_bytes"],
-                savings_x265_pct=agg["savings_x265_pct"],
-                estimated_size_nvenc_bytes=agg["estimated_size_nvenc_bytes"],
-                savings_nvenc_pct=agg["savings_nvenc_pct"],
+                estimated_size_bytes=agg["estimated_size_bytes"],
+                savings_pct=agg["savings_pct"],
             )
         )
 

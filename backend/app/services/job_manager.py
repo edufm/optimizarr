@@ -11,9 +11,13 @@ from typing import Literal
 from uuid import uuid4
 
 from .. import config as cfg
+from .. import state
 
-JobType = Literal["analyze", "optimize"]
+JobType = Literal["analyze", "optimize", "sample"]
 JobStatus = Literal["queued", "running", "succeeded", "failed"]
+
+_SAMPLE_KEY = "__sample__"  # folder_id sintético só pra reaproveitar o lock de 1-job-por-chave
+_RESULT_RE = re.compile(r"RESULTADO bpp=([\d.]+) speed_factor=([\d.]+)")
 
 
 class JobConflict(Exception):
@@ -32,6 +36,7 @@ class Job:
     finished_at: datetime | None = None
     returncode: int | None = None
     log: deque[str] = field(default_factory=lambda: deque(maxlen=500))
+    sample_meta: dict | None = None  # só em jobs "sample": encoder/quality/resolution/fps/paths usados
     _cmd: list[str] = field(default_factory=list, repr=False)
 
     def log_tail(self, n: int = 200) -> list[str]:
@@ -59,11 +64,16 @@ class JobManager:
 
     # --- API pública -----------------------------------------------------
 
-    def launch_analyze(self, folder_id: str, folder_path: str,
-                        resolution: int, fps: int) -> Job:
+    def launch_analyze(self, folder_id: str, folder_path: str, resolution: int, fps: int,
+                        target_bpp: float | None = None, speed_factor: float | None = None) -> Job:
         cmd = [sys.executable, str(cfg.ANALYZE_SCRIPT), folder_path,
                "--csv", str(cfg.CSV_DIR / f"{folder_id}.csv"),
                "--resolution", str(resolution), "--fps", str(fps)]
+        # sem calibração ainda: omite as flags e deixa o script cair nos próprios defaults
+        if target_bpp is not None:
+            cmd += ["--target-bpp", str(target_bpp)]
+        if speed_factor is not None:
+            cmd += ["--speed-factor", str(speed_factor)]
         with self._lock:
             if folder_id in self._active_by_folder:
                 raise JobConflict(folder_id)
@@ -75,9 +85,10 @@ class JobManager:
         return job
 
     def launch_optimize(self, folder_id: str, file_path: str,
-                         resolution: int, fps: int, crf: int) -> Job:
+                         resolution: int, fps: int, encoder: str, quality: int) -> Job:
         cmd = ["bash", str(cfg.TRANSCODE_SCRIPT), file_path, "--replace",
-               "--resolution", str(resolution), "--fps", str(fps), "--crf", str(crf)]
+               "--resolution", str(resolution), "--fps", str(fps),
+               "--encoder", encoder, "--quality", str(quality)]
         with self._lock:
             if folder_id in self._active_by_folder:
                 raise JobConflict(folder_id)
@@ -91,6 +102,25 @@ class JobManager:
             else:
                 job.status = "queued"
                 self._optimize_queue.append(job)
+        return job
+
+    def launch_sample(self, input_path: str, output_dir: str,
+                       resolution: int, fps: int, encoder: str, quality: int) -> Job:
+        cmd = ["bash", str(cfg.SAMPLE_SCRIPT), input_path, output_dir,
+               "--encoder", encoder, "--quality", str(quality),
+               "--resolution", str(resolution), "--fps", str(fps)]
+        with self._lock:
+            if _SAMPLE_KEY in self._active_by_folder:
+                raise JobConflict(_SAMPLE_KEY)
+            job = self._new_job("sample", _SAMPLE_KEY, input_path, cmd)
+            job.sample_meta = {
+                "encoder": encoder, "quality": quality, "resolution": resolution, "fps": fps,
+                "sample_input": input_path, "sample_output": output_dir,
+            }
+            job.status = "running"
+            job.started_at = _now()
+            self._active_by_folder[_SAMPLE_KEY] = job
+            self._spawn(job)
         return job
 
     def get(self, job_id: str) -> Job | None:
@@ -164,6 +194,8 @@ class JobManager:
         self._on_finished(job)
 
     def _on_finished(self, job: Job) -> None:
+        if job.type == "sample" and job.status == "succeeded":
+            self._save_calibration(job)
         with self._lock:
             if self._active_by_folder.get(job.folder_id) is job:
                 del self._active_by_folder[job.folder_id]
@@ -175,6 +207,20 @@ class JobManager:
                     next_job.started_at = _now()
                     self._optimize_running = next_job
                     self._spawn(next_job)
+
+    def _save_calibration(self, job: Job) -> None:
+        assert job.sample_meta is not None
+        for line in job.log:
+            match = _RESULT_RE.search(line)
+            if match:
+                state.set_calibration({
+                    "target_bpp": float(match.group(1)),
+                    "speed_factor": float(match.group(2)),
+                    "measured_at": _now().isoformat(),
+                    **job.sample_meta,
+                })
+                return
+        job.log.append("Aviso: job terminou OK mas não achou a linha RESULTADO — calibração não salva.")
 
 
 def _now() -> datetime:

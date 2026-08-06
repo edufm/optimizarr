@@ -6,7 +6,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import config as cfg
-from .routers import dashboard, folders, jobs, settings
+from .routers import dashboard, folders, jobs, sample, settings
 
 app = FastAPI(title="optimizarr")
 
@@ -23,6 +23,7 @@ app.include_router(folders.router, prefix="/api")
 app.include_router(settings.router, prefix="/api")
 app.include_router(dashboard.router, prefix="/api")
 app.include_router(jobs.router, prefix="/api")
+app.include_router(sample.router, prefix="/api")
 
 if cfg.FRONTEND_DIST.is_dir():
     assets_dir = cfg.FRONTEND_DIST / "assets"

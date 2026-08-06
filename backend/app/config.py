@@ -10,3 +10,4 @@ FRONTEND_DIST = REPO_ROOT / "frontend" / "dist"
 
 ANALYZE_SCRIPT = SCRIPTS_DIR / "analyze-video-bloat.py"
 TRANSCODE_SCRIPT = SCRIPTS_DIR / "transcode-1080p-hevc.sh"
+SAMPLE_SCRIPT = SCRIPTS_DIR / "sample-test.sh"

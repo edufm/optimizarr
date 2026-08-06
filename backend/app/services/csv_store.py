@@ -25,14 +25,12 @@ COLUMN_MAP = {
     "tamanho_bytes": "size",
     "gb_por_hora": "gb_per_hour",
     "bpp": "bpp",
-    "estimado_x265_bytes": "est_size_x265",
-    "estimado_nvenc_bytes": "est_size_nvenc",
-    "ganho_x265_pct": "savings_x265",
-    "ganho_nvenc_pct": "savings_nvenc",
+    "estimado_bytes": "est_size",
+    "ganho_pct": "savings",
 }
 
-INT_FIELDS = {"width", "height", "size", "est_size_x265", "est_size_nvenc"}
-FLOAT_FIELDS = {"fps", "duration", "bpp", "gb_per_hour", "savings_x265", "savings_nvenc"}
+INT_FIELDS = {"width", "height", "size", "est_size"}
+FLOAT_FIELDS = {"fps", "duration", "bpp", "gb_per_hour", "savings"}
 
 
 def _csv_path(folder_id: str) -> Path:
@@ -58,9 +56,15 @@ def read_rows(folder_id: str) -> list[dict] | None:
             for src_key, dst_key in COLUMN_MAP.items():
                 value = raw.get(src_key, "")
                 if dst_key in INT_FIELDS:
-                    row[dst_key] = int(float(value)) if value != "" else 0
+                    try:
+                        row[dst_key] = int(float(value)) if value != "" else 0
+                    except ValueError:
+                        row[dst_key] = 0  # CSV de schema antigo/desatualizado — zera até rodar Atualizar
                 elif dst_key in FLOAT_FIELDS:
-                    row[dst_key] = float(value) if value != "" else 0.0
+                    try:
+                        row[dst_key] = float(value) if value != "" else 0.0
+                    except ValueError:
+                        row[dst_key] = 0.0
                 else:
                     row[dst_key] = value
             row["filename"] = os.path.basename(row["path"])
@@ -80,16 +84,12 @@ def aggregate(folder_id: str) -> dict | None:
     if rows is None:
         return None
     current_size = sum(r["size"] for r in rows)
-    est_x265 = sum(r["est_size_x265"] for r in rows)
-    est_nvenc = sum(r["est_size_nvenc"] for r in rows)
-    savings_x265_pct = 100 * (1 - est_x265 / current_size) if current_size else 0.0
-    savings_nvenc_pct = 100 * (1 - est_nvenc / current_size) if current_size else 0.0
+    est_size = sum(r["est_size"] for r in rows)
+    savings_pct = 100 * (1 - est_size / current_size) if current_size else 0.0
     return {
         "generated_at": generated_at(folder_id),
         "file_count": len(rows),
         "current_size_bytes": current_size,
-        "estimated_size_x265_bytes": est_x265,
-        "savings_x265_pct": savings_x265_pct,
-        "estimated_size_nvenc_bytes": est_nvenc,
-        "savings_nvenc_pct": savings_nvenc_pct,
+        "estimated_size_bytes": est_size,
+        "savings_pct": savings_pct,
     }

@@ -26,7 +26,25 @@ class FolderCreate(BaseModel):
 class Settings(BaseModel):
     resolution: int = Field(gt=0)
     fps: int = Field(gt=0)
-    crf: int = Field(ge=0, le=51)
+    encoder: Literal["cpu", "nvenc"]
+    quality: int = Field(ge=0, le=51)
+
+
+class Calibration(BaseModel):
+    target_bpp: float
+    speed_factor: float
+    measured_at: datetime
+    encoder: Literal["cpu", "nvenc"]
+    quality: int
+    resolution: int
+    fps: int
+    sample_input: str
+    sample_output: str
+
+
+class SampleTestRequest(BaseModel):
+    input_path: str
+    output_dir: str
 
 
 class DiskUsageOut(BaseModel):
@@ -45,10 +63,8 @@ class FolderSummaryOut(BaseModel):
     generated_at: datetime | None = None
     file_count: int | None = None
     current_size_bytes: int | None = None
-    estimated_size_x265_bytes: int | None = None
-    savings_x265_pct: float | None = None
-    estimated_size_nvenc_bytes: int | None = None
-    savings_nvenc_pct: float | None = None
+    estimated_size_bytes: int | None = None
+    savings_pct: float | None = None
 
 
 class DashboardOut(BaseModel):
@@ -66,10 +82,8 @@ class FileRow(BaseModel):
     duration: float
     size: int
     bpp: float
-    est_size_x265: int
-    est_size_nvenc: int
-    savings_x265: float
-    savings_nvenc: float
+    est_size: int
+    savings: float
     gb_per_hour: float
     profile: str
     pix_fmt: str
@@ -91,7 +105,7 @@ class OptimizeRequest(BaseModel):
 
 class JobOut(BaseModel):
     id: str
-    type: Literal["analyze", "optimize"]
+    type: Literal["analyze", "optimize", "sample"]
     folder_id: str
     file_path: str | None = None
     status: Literal["queued", "running", "succeeded", "failed"]
