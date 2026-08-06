@@ -7,13 +7,14 @@ tempo/CPU/GPU de verdade.
 
 Métrica central: bits por pixel (bpp) = bitrate_video / (largura * altura * fps).
 Normaliza o bitrate pela "quantidade de imagem", permitindo comparar arquivos
-de resoluções diferentes. Valores de referência (calibrados em testes reais
-neste projeto, num arquivo H264 High Profile de conteúdo com bastante
-detalhe/movimento):
-  - bpp ~0.04  -> já eficiente, pouco ganho esperado com HEVC
-  - bpp ~0.54  -> muito acima do necessário, ganho grande esperado
+de resoluções diferentes.
 
-A estimativa de tamanho final considera também o teto de resolução/fps que
+--target-bpp é o bpp "de boa qualidade" pro encoder/qualidade escolhidos —
+não é mais uma constante genérica: vem da calibração medida por
+sample-test.sh (encode real de uma amostra), passada pelo backend. Sem
+calibração ainda, cai no padrão abaixo (referência solta, não medida).
+
+A estimativa de tamanho final também considera o teto de resolução/fps que
 seria aplicado por transcode-1080p-hevc.sh (--resolution/--fps): pra fontes
 acima desse teto, o cálculo já assume o downscale/fps-cap real, não só o
 ganho de eficiência do codec — senão a estimativa fica conservadora demais
@@ -22,14 +23,20 @@ pra fontes muito acima da resolução/fps-alvo.
 Uso:
   analyze-video-bloat.py <diretorio> [--csv saida.csv] [--min-savings N]
                          [--resolution N] [--fps N]
+                         [--target-bpp N] [--speed-factor N]
 
-  --min-savings N   % mínimo de redução estimada pra considerar "vale a pena"
-                     (padrão 20)
-  --csv arquivo      também exporta a tabela completa em CSV
-  --resolution N    teto do lado curto em pixels usado na estimativa, mesmo
-                     significado do transcode-1080p-hevc.sh (padrão 1080)
-  --fps N           fps-alvo usado na estimativa, mesmo significado do
-                     transcode-1080p-hevc.sh (padrão 30)
+  --min-savings N    % mínimo de redução estimada pra considerar "vale a pena"
+                      (padrão 20)
+  --csv arquivo       também exporta a tabela completa em CSV
+  --resolution N     teto do lado curto em pixels usado na estimativa, mesmo
+                      significado do transcode-1080p-hevc.sh (padrão 1080)
+  --fps N            fps-alvo usado na estimativa, mesmo significado do
+                      transcode-1080p-hevc.sh (padrão 30)
+  --target-bpp N     bpp-alvo calibrado (via sample-test.sh) pro encoder/
+                      qualidade em uso (padrão 0.060, referência solta —
+                      não é medido, só um chute razoável até calibrar)
+  --speed-factor N   velocidade medida do encoder em uso, multiplicador de
+                      tempo real (padrão 1.0, assume tempo real)
 """
 
 import argparse
@@ -41,13 +48,8 @@ from pathlib import Path
 
 VIDEO_EXTS = {".mkv", ".mp4", ".avi", ".mov", ".wmv", ".flv", ".webm", ".m4v", ".ts", ".m2ts"}
 
-# bpp-alvo pra "boa qualidade", calibrado nos testes reais deste projeto
-TARGET_BPP_X265 = 0.060   # ~libx265 crf 23-24 numa fonte com bastante detalhe
-TARGET_BPP_NVENC = 0.130  # ~hevc_nvenc cq 25-26 na mesma fonte
-
-# fator de velocidade medido nos testes reais (multiplicador de tempo real)
-SPEED_X265 = 1.0    # CPU 12 threads, ~1x tempo real pra crf~24
-SPEED_NVENC = 15.0  # GPU (GTX 1070), conservador; GPUs mais novas são mais rápidas
+DEFAULT_TARGET_BPP = 0.060  # referência solta até calibrar de verdade com sample-test.sh
+DEFAULT_SPEED_FACTOR = 1.0
 
 
 def ffprobe(path: Path):
@@ -77,7 +79,7 @@ def parse_fps(s: str):
         return None
 
 
-def analyze_file(path: Path, resolution: int, long_edge: int, fps_target: float):
+def analyze_file(path: Path, resolution: int, long_edge: int, fps_target: float, target_bpp: float):
     data = ffprobe(path)
     if not data or "format" not in data:
         return None
@@ -126,20 +128,12 @@ def analyze_file(path: Path, resolution: int, long_edge: int, fps_target: float)
     effective_pixels = pixels * scale * scale
     effective_fps = fps_target if fps >= fps_target * 1.5 else fps
 
-    est_bitrate_x265 = min(video_bitrate, TARGET_BPP_X265 * effective_pixels * effective_fps)
-    est_bitrate_nvenc = min(video_bitrate, TARGET_BPP_NVENC * effective_pixels * effective_fps)
+    est_bitrate = min(video_bitrate, target_bpp * effective_pixels * effective_fps)
+    est_video_size = est_bitrate * duration / 8
 
-    est_video_size_x265 = est_bitrate_x265 * duration / 8
-    est_video_size_nvenc = est_bitrate_nvenc * duration / 8
-
-    audio_size = audio_bitrate * duration / 8
     original_video_size = video_bitrate * duration / 8
-
-    est_size_x265 = size - original_video_size + est_video_size_x265
-    est_size_nvenc = size - original_video_size + est_video_size_nvenc
-
-    savings_x265 = 100 * (1 - est_size_x265 / size)
-    savings_nvenc = 100 * (1 - est_size_nvenc / size)
+    est_size = size - original_video_size + est_video_size
+    savings = 100 * (1 - est_size / size)
 
     gb_per_hour = size / duration * 3600 / 1024**3
 
@@ -152,10 +146,8 @@ def analyze_file(path: Path, resolution: int, long_edge: int, fps_target: float)
         "duration": duration,
         "size": size,
         "bpp": bpp,
-        "est_size_x265": est_size_x265,
-        "est_size_nvenc": est_size_nvenc,
-        "savings_x265": savings_x265,
-        "savings_nvenc": savings_nvenc,
+        "est_size": est_size,
+        "savings": savings,
         "gb_per_hour": gb_per_hour,
         "profile": video_stream.get("profile", ""),
         "pix_fmt": video_stream.get("pix_fmt", ""),
@@ -185,6 +177,10 @@ def main():
                      help="teto do lado curto em pixels usado na estimativa (padrão 1080)")
     ap.add_argument("--fps", type=float, default=30,
                      help="fps-alvo usado na estimativa (padrão 30)")
+    ap.add_argument("--target-bpp", type=float, default=DEFAULT_TARGET_BPP,
+                     help=f"bpp-alvo calibrado (padrão {DEFAULT_TARGET_BPP}, referência solta)")
+    ap.add_argument("--speed-factor", type=float, default=DEFAULT_SPEED_FACTOR,
+                     help=f"velocidade medida do encoder, multiplicador de tempo real (padrão {DEFAULT_SPEED_FACTOR})")
     args = ap.parse_args()
 
     long_edge = round(args.resolution * 16 / 9)
@@ -201,34 +197,33 @@ def main():
     )
 
     print(f"Analisando {len(files)} arquivos em {root}...", file=sys.stderr)
-    print(f"Alvo da estimativa: resolução {args.resolution}p (lado longo {long_edge}), fps {args.fps}.\n",
-          file=sys.stderr)
+    print(f"Alvo da estimativa: resolução {args.resolution}p (lado longo {long_edge}), fps {args.fps}, "
+          f"bpp {args.target_bpp:.4f}.\n", file=sys.stderr)
 
     results = []
     for i, f in enumerate(files, 1):
         print(f"\r[{i}/{len(files)}] {f.name[:60]}", end="", file=sys.stderr, flush=True)
-        r = analyze_file(f, args.resolution, long_edge, args.fps)
+        r = analyze_file(f, args.resolution, long_edge, args.fps, args.target_bpp)
         if r:
             results.append(r)
     print(file=sys.stderr)
 
-    results.sort(key=lambda r: r["savings_x265"], reverse=True)
+    results.sort(key=lambda r: r["savings"], reverse=True)
 
-    worth_it = [r for r in results if r["savings_x265"] >= args.min_savings]
-    marginal = [r for r in results if r["savings_x265"] < args.min_savings]
+    worth_it = [r for r in results if r["savings"] >= args.min_savings]
+    marginal = [r for r in results if r["savings"] < args.min_savings]
 
-    print(f"\n{'ARQUIVO':<50} {'RES':<10} {'CODEC':<6} {'BPP':<7} {'GB/h':<6} {'GANHO x265':<11} {'GANHO NVENC':<11}")
-    print("-" * 108)
+    print(f"\n{'ARQUIVO':<50} {'RES':<10} {'CODEC':<6} {'BPP':<7} {'GB/h':<6} {'GANHO':<8}")
+    print("-" * 90)
     for r in results:
         rel = str(r["path"].relative_to(root))
         if len(rel) > 49:
             rel = "..." + rel[-46:]
         print(f"{rel:<50} {r['width']}x{r['height']:<5} {r['codec']:<6} {r['bpp']:<7.3f} {r['gb_per_hour']:<6.2f} "
-              f"{r['savings_x265']:>9.0f}% {r['savings_nvenc']:>10.0f}%")
+              f"{r['savings']:>6.0f}%")
 
     total_size = sum(r["size"] for r in results)
-    total_est_x265 = sum(r["est_size_x265"] if r in worth_it else r["size"] for r in results)
-    total_est_nvenc = sum(r["est_size_nvenc"] if r in worth_it else r["size"] for r in results)
+    total_est = sum(r["est_size"] if r in worth_it else r["size"] for r in results)
     total_duration_worth_it = sum(r["duration"] for r in worth_it)
 
     print("\n=== RESUMO ===")
@@ -238,29 +233,23 @@ def main():
     print(f"Ganho baixo / já eficiente: {len(marginal)} arquivos")
     print()
     if total_size > 0:
-        print(f"Tamanho estimado após libx265 (CPU) nos arquivos que valem a pena: {human(total_est_x265)} "
-              f"(economia de {human(total_size - total_est_x265)}, {100*(1-total_est_x265/total_size):.0f}%)")
-        print(f"Tamanho estimado após hevc_nvenc (GPU) nos arquivos que valem a pena: {human(total_est_nvenc)} "
-              f"(economia de {human(total_size - total_est_nvenc)}, {100*(1-total_est_nvenc/total_size):.0f}%)")
+        print(f"Tamanho estimado nos arquivos que valem a pena: {human(total_est)} "
+              f"(economia de {human(total_size - total_est)}, {100*(1-total_est/total_size):.0f}%)")
     print()
-    print(f"Tempo estimado CPU (libx265, ~{SPEED_X265}x tempo real): "
-          f"{total_duration_worth_it / SPEED_X265 / 3600:.1f} horas")
-    print(f"Tempo estimado GPU (NVENC, ~{SPEED_NVENC}x tempo real): "
-          f"{total_duration_worth_it / SPEED_NVENC / 3600:.1f} horas")
+    print(f"Tempo estimado (~{args.speed_factor:.1f}x tempo real): "
+          f"{total_duration_worth_it / args.speed_factor / 3600:.1f} horas")
 
     if args.csv:
         with open(args.csv, "w", newline="") as f:
             w = csv.writer(f)
             w.writerow(["arquivo", "largura", "altura", "codec", "profile", "pix_fmt", "color_space",
                         "color_transfer", "color_primaries", "field_order", "fps", "duracao_s", "tamanho_bytes",
-                        "gb_por_hora", "bpp", "estimado_x265_bytes", "estimado_nvenc_bytes",
-                        "ganho_x265_pct", "ganho_nvenc_pct"])
+                        "gb_por_hora", "bpp", "estimado_bytes", "ganho_pct"])
             for r in results:
                 w.writerow([str(r["path"]), r["width"], r["height"], r["codec"], r["profile"], r["pix_fmt"],
                             r["color_space"], r["color_transfer"], r["color_primaries"], r["field_order"],
                             f"{r['fps']:.2f}", f"{r['duration']:.1f}", r["size"], f"{r['gb_per_hour']:.3f}",
-                            f"{r['bpp']:.4f}", f"{r['est_size_x265']:.0f}", f"{r['est_size_nvenc']:.0f}",
-                            f"{r['savings_x265']:.1f}", f"{r['savings_nvenc']:.1f}"])
+                            f"{r['bpp']:.4f}", f"{r['est_size']:.0f}", f"{r['savings']:.1f}"])
         print(f"\nCSV salvo em {args.csv}")
 
 
