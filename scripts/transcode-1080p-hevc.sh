@@ -152,20 +152,26 @@ for f in "${FILES[@]}"; do
     echo "  fps origem: $fps -> forçando ${FPS}fps" | tee -a "$LOG"
   fi
 
+  # duração total, usada tanto pra validação pós-encode quanto (via essa linha,
+  # lida pelo backend) pra calcular % de progresso a partir do out_time_ms que
+  # o -progress abaixo vai imprimindo.
+  dur_orig_full=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$f" 2>/dev/null)
+  echo "DURACAO_TOTAL=${dur_orig_full:-0}"
+
   if [[ "$MODE" == "vaapi" ]]; then
-    ffmpeg -hide_banner -loglevel error -y -vaapi_device "$VAAPI_DEV" \
+    ffmpeg -hide_banner -loglevel error -nostats -progress pipe:1 -y -vaapi_device "$VAAPI_DEV" \
       -i "$f" -map 0 -map -0:d -c copy \
       -vf "${SCALE},format=nv12,hwupload" -c:v hevc_vaapi -qp 24 "${FPS_ARGS[@]}" \
       "$tmp_out" 2>>"$LOG"
     ok=$?
   elif [[ "$MODE" == "nvenc" ]]; then
-    ffmpeg -hide_banner -loglevel error -y \
+    ffmpeg -hide_banner -loglevel error -nostats -progress pipe:1 -y \
       -i "$f" -map 0 -map -0:d -c copy \
       -vf "$SCALE" -c:v hevc_nvenc -rc vbr -cq "$QUALITY" -b:v 0 "${FPS_ARGS[@]}" \
       "$tmp_out" 2>>"$LOG"
     ok=$?
   else
-    ffmpeg -hide_banner -loglevel error -y \
+    ffmpeg -hide_banner -loglevel error -nostats -progress pipe:1 -y \
       -i "$f" -map 0 -map -0:d -c copy \
       -vf "$SCALE" -c:v libx265 -preset medium -crf "$QUALITY" "${FPS_ARGS[@]}" \
       "$tmp_out" 2>>"$LOG"
@@ -180,7 +186,7 @@ for f in "${FILES[@]}"; do
   fi
 
   # valida duração (tolerância de 2s) antes de considerar sucesso
-  dur_orig=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$f" 2>/dev/null | cut -d. -f1)
+  dur_orig=${dur_orig_full%.*}
   dur_new=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$tmp_out" 2>/dev/null | cut -d. -f1)
   diff=$(( ${dur_orig:-0} - ${dur_new:-0} ))
   diff=${diff#-}

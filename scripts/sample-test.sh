@@ -80,14 +80,15 @@ fi
 
 echo "Reencodando o trecho com $ENCODER ($quality_label=$QUALITY, ${RESOLUTION}p, ${FPS}fps)..."
 rm -f "$encoded_out"
+echo "DURACAO_TOTAL=$SAMPLE_SECONDS"
 start=$(date +%s.%N)
 if [[ "$ENCODER" == "nvenc" ]]; then
-  ffmpeg -hide_banner -loglevel error -y -i "$raw_out" -map 0 -map -0:d -c copy \
+  ffmpeg -hide_banner -loglevel error -nostats -progress pipe:1 -y -i "$raw_out" -map 0 -map -0:d -c copy \
     -vf "$SCALE" -c:v hevc_nvenc -rc vbr -cq "$QUALITY" -b:v 0 "${FPS_ARGS[@]}" \
     "$encoded_out"
   ok=$?
 else
-  ffmpeg -hide_banner -loglevel error -y -i "$raw_out" -map 0 -map -0:d -c copy \
+  ffmpeg -hide_banner -loglevel error -nostats -progress pipe:1 -y -i "$raw_out" -map 0 -map -0:d -c copy \
     -vf "$SCALE" -c:v libx265 -preset medium -crf "$QUALITY" "${FPS_ARGS[@]}" \
     "$encoded_out"
   ok=$?
