@@ -27,10 +27,11 @@ COLUMN_MAP = {
     "bpp": "bpp",
     "estimado_bytes": "est_size",
     "ganho_pct": "savings",
+    "ganho_gb": "savings_gb",
 }
 
 INT_FIELDS = {"width", "height", "size", "est_size"}
-FLOAT_FIELDS = {"fps", "duration", "bpp", "gb_per_hour", "savings"}
+FLOAT_FIELDS = {"fps", "duration", "bpp", "gb_per_hour", "savings", "savings_gb"}
 
 
 def _csv_path(folder_id: str) -> Path:

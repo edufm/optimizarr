@@ -84,6 +84,7 @@ class FileRow(BaseModel):
     bpp: float
     est_size: int
     savings: float
+    savings_gb: float
     gb_per_hour: float
     profile: str
     pix_fmt: str

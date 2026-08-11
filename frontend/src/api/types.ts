@@ -69,6 +69,7 @@ export interface FileRow {
   bpp: number
   est_size: number
   savings: number
+  savings_gb: number
   gb_per_hour: number
   profile: string
   pix_fmt: string

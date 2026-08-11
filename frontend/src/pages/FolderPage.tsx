@@ -69,6 +69,7 @@ export function FolderPage() {
       { key: 'bpp', label: 'BPP', align: 'right', format: (v) => (v as number).toFixed(3) },
       { key: 'gb_per_hour', label: 'GB/h', align: 'right', format: (v) => (v as number).toFixed(2) },
       { key: 'savings', label: 'Ganho', align: 'right', format: (v) => formatPercent(v as number) },
+      { key: 'savings_gb', label: 'Ganho GB', align: 'right', format: (v) => (v as number).toFixed(2) },
       { key: 'profile', label: 'Profile' },
       { key: 'pix_fmt', label: 'Pix fmt' },
       { key: 'color_space', label: 'Color space' },

@@ -134,6 +134,7 @@ def analyze_file(path: Path, resolution: int, long_edge: int, fps_target: float,
     original_video_size = video_bitrate * duration / 8
     est_size = size - original_video_size + est_video_size
     savings = 100 * (1 - est_size / size)
+    savings_gb = (size - est_size) / 1024**3
 
     gb_per_hour = size / duration * 3600 / 1024**3
 
@@ -148,6 +149,7 @@ def analyze_file(path: Path, resolution: int, long_edge: int, fps_target: float,
         "bpp": bpp,
         "est_size": est_size,
         "savings": savings,
+        "savings_gb": savings_gb,
         "gb_per_hour": gb_per_hour,
         "profile": video_stream.get("profile", ""),
         "pix_fmt": video_stream.get("pix_fmt", ""),
@@ -213,14 +215,14 @@ def main():
     worth_it = [r for r in results if r["savings"] >= args.min_savings]
     marginal = [r for r in results if r["savings"] < args.min_savings]
 
-    print(f"\n{'ARQUIVO':<50} {'RES':<10} {'CODEC':<6} {'BPP':<7} {'GB/h':<6} {'GANHO':<8}")
-    print("-" * 90)
+    print(f"\n{'ARQUIVO':<50} {'RES':<10} {'CODEC':<6} {'BPP':<7} {'GB/h':<6} {'GANHO':<8} {'GANHO GB':<9}")
+    print("-" * 100)
     for r in results:
         rel = str(r["path"].relative_to(root))
         if len(rel) > 49:
             rel = "..." + rel[-46:]
         print(f"{rel:<50} {r['width']}x{r['height']:<5} {r['codec']:<6} {r['bpp']:<7.3f} {r['gb_per_hour']:<6.2f} "
-              f"{r['savings']:>6.0f}%")
+              f"{r['savings']:>6.0f}% {r['savings_gb']:>7.2f}G")
 
     total_size = sum(r["size"] for r in results)
     total_est = sum(r["est_size"] if r in worth_it else r["size"] for r in results)
@@ -244,12 +246,12 @@ def main():
             w = csv.writer(f)
             w.writerow(["arquivo", "largura", "altura", "codec", "profile", "pix_fmt", "color_space",
                         "color_transfer", "color_primaries", "field_order", "fps", "duracao_s", "tamanho_bytes",
-                        "gb_por_hora", "bpp", "estimado_bytes", "ganho_pct"])
+                        "gb_por_hora", "bpp", "estimado_bytes", "ganho_pct", "ganho_gb"])
             for r in results:
                 w.writerow([str(r["path"]), r["width"], r["height"], r["codec"], r["profile"], r["pix_fmt"],
                             r["color_space"], r["color_transfer"], r["color_primaries"], r["field_order"],
                             f"{r['fps']:.2f}", f"{r['duration']:.1f}", r["size"], f"{r['gb_per_hour']:.3f}",
-                            f"{r['bpp']:.4f}", f"{r['est_size']:.0f}", f"{r['savings']:.1f}"])
+                            f"{r['bpp']:.4f}", f"{r['est_size']:.0f}", f"{r['savings']:.1f}", f"{r['savings_gb']:.3f}"])
         print(f"\nCSV salvo em {args.csv}")
 
 
