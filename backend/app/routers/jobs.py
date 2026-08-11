@@ -19,6 +19,7 @@ def _to_out(job: job_manager.Job) -> JobOut:
         started_at=job.started_at,
         finished_at=job.finished_at,
         returncode=job.returncode,
+        progress_pct=job.progress_pct,
         log_tail=job.log_tail(),
     )
 

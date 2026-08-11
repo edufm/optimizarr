@@ -20,6 +20,18 @@ JobStatus = Literal["queued", "running", "succeeded", "failed"]
 _SAMPLE_KEY = "__sample__"  # folder_id sintético só pra reaproveitar o lock de 1-job-por-chave
 _RESULT_RE = re.compile(r"RESULTADO bpp=([\d.]+) speed_factor=([\d.]+)")
 
+# Linhas do bloco -progress do ffmpeg (transcode-1080p-hevc.sh e sample-test.sh) — não
+# viram linha de log (senão spammam as 500 linhas do buffer numa hora de encode), só
+# alimentam job.progress_pct via out_time_us/DURACAO_TOTAL.
+_PROGRESS_LINE_RE = re.compile(
+    r"^(frame|fps|stream_\d+_\d+_q|bitrate|total_size|out_time_us|out_time_ms|out_time|"
+    r"dup_frames|drop_frames|speed|progress|DURACAO_TOTAL)="
+)
+_DURATION_RE = re.compile(r"^DURACAO_TOTAL=([\d.]+)$")
+# nome enganoso do próprio ffmpeg: "out_time_ms" também vem em MICROsegundos (bug antigo
+# mantido por compatibilidade) — por isso usamos out_time_us, que é explícito.
+_OUT_TIME_US_RE = re.compile(r"^out_time_us=(-?\d+)$")
+
 
 class JobConflict(Exception):
     """Levantada quando um novo job não pode ser criado por causa de outro já ativo.
@@ -45,6 +57,7 @@ class Job:
     started_at: datetime | None = None
     finished_at: datetime | None = None
     returncode: int | None = None
+    progress_pct: float | None = None
     log: deque[str] = field(default_factory=lambda: deque(maxlen=500))
     sample_meta: dict | None = None  # só em jobs "sample": encoder/quality/resolution/fps/paths usados
     _cmd: list[str] = field(default_factory=list, repr=False)
@@ -201,6 +214,7 @@ class JobManager:
         # aparecia "de uma vez" no final, nunca ao vivo. os.read() é 1 syscall só,
         # devolve o que tiver disponível na hora (semântica read1).
         buf = ""
+        total_duration: float | None = None
         assert proc.stdout is not None
         fd = proc.stdout.fileno()
         while True:
@@ -210,9 +224,21 @@ class JobManager:
             buf += chunk.decode("utf-8", errors="replace")
             *complete_lines, buf = re.split(r"[\r\n]+", buf)
             for line in complete_lines:
-                if line:
-                    job.log.append(line)
-        if buf:
+                if not line:
+                    continue
+                duration_match = _DURATION_RE.match(line)
+                if duration_match:
+                    total_duration = float(duration_match.group(1)) or None
+                    continue
+                time_match = _OUT_TIME_US_RE.match(line)
+                if time_match and total_duration:
+                    elapsed = max(0, int(time_match.group(1))) / 1_000_000
+                    job.progress_pct = min(100.0, elapsed / total_duration * 100)
+                    continue
+                if _PROGRESS_LINE_RE.match(line):
+                    continue
+                job.log.append(line)
+        if buf and not _PROGRESS_LINE_RE.match(buf):
             job.log.append(buf)
 
         returncode = proc.wait()

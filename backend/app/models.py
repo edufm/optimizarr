@@ -114,6 +114,7 @@ class JobOut(BaseModel):
     started_at: datetime | None = None
     finished_at: datetime | None = None
     returncode: int | None = None
+    progress_pct: float | None = None
     log_tail: list[str] = []
 
 
