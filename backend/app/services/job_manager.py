@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 import sys
@@ -21,7 +22,16 @@ _RESULT_RE = re.compile(r"RESULTADO bpp=([\d.]+) speed_factor=([\d.]+)")
 
 
 class JobConflict(Exception):
-    """Levantada quando já existe um job ativo (queued/running) para a pasta."""
+    """Levantada quando um novo job não pode ser criado por causa de outro já ativo.
+
+    reason="folder": a pasta está sendo analisada agora (ou tem otimização pendente,
+    no caso de tentar analisar). reason="file": esse arquivo específico já está na
+    fila/rodando uma otimização.
+    """
+
+    def __init__(self, key: str, reason: str = "folder") -> None:
+        super().__init__(key)
+        self.reason = reason
 
 
 @dataclass
@@ -48,17 +58,23 @@ class JobManager:
     não há requisito de histórico de execução (os CSVs são o único estado durável).
 
     Política de concorrência:
-    - no máximo 1 job ativo (queued/running, analyze OU optimize) por pasta, pra não
-      brigar pelo mesmo CSV/disco;
-    - jobs de "optimize" são serializados globalmente (fila FIFO) — encode de verdade
-      (libx265/VAAPI) é pesado, rodar dois ao mesmo tempo derruba o throughput dos dois
-      sem ganho real. "analyze" (só ffprobe) não tem esse limite global.
+    - "analyze" (e "sample", via folder_id sintético): no máximo 1 job ativo por pasta —
+      é quem escreve o CSV, então dois ao mesmo tempo na mesma pasta corromperiam a
+      escrita. Também bloqueia "optimize" novo nessa pasta enquanto está rodando (não
+      faz sentido trocar arquivo no meio de uma reanálise) e é bloqueado por "optimize"
+      pendente na pasta (não reanalisa com arquivos ainda trocando).
+    - "optimize" é serializado GLOBALMENTE (fila FIFO única pro servidor inteiro, não por
+      pasta) — encode de verdade é pesado, rodar dois ao mesmo tempo (mesma pasta ou não)
+      derruba o throughput dos dois sem ganho real. Como só 1 roda por vez de qualquer
+      forma, várias pastas (ou vários arquivos da mesma pasta) podem enfileirar otimização
+      à vontade — só o mesmo arquivo não pode ser enfileirado duas vezes.
     """
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._jobs: dict[str, Job] = {}
-        self._active_by_folder: dict[str, Job] = {}
+        self._active_by_folder: dict[str, Job] = {}  # exclusividade de analyze/sample
+        self._optimize_folders: dict[str, set[str]] = {}  # folder_id -> job ids queued/running
         self._optimize_running: Job | None = None
         self._optimize_queue: deque[Job] = deque()
 
@@ -75,7 +91,7 @@ class JobManager:
         if speed_factor is not None:
             cmd += ["--speed-factor", str(speed_factor)]
         with self._lock:
-            if folder_id in self._active_by_folder:
+            if folder_id in self._active_by_folder or self._optimize_folders.get(folder_id):
                 raise JobConflict(folder_id)
             job = self._new_job("analyze", folder_id, None, cmd)
             job.status = "running"
@@ -91,9 +107,12 @@ class JobManager:
                "--encoder", encoder, "--quality", str(quality)]
         with self._lock:
             if folder_id in self._active_by_folder:
-                raise JobConflict(folder_id)
+                raise JobConflict(folder_id, reason="folder")  # pasta sendo (re)analisada agora
+            if any(j.type == "optimize" and j.file_path == file_path and j.status in ("queued", "running")
+                   for j in self._jobs.values()):
+                raise JobConflict(file_path, reason="file")  # esse arquivo já está na fila/rodando
             job = self._new_job("optimize", folder_id, file_path, cmd)
-            self._active_by_folder[folder_id] = job
+            self._optimize_folders.setdefault(folder_id, set()).add(job.id)
             if self._optimize_running is None:
                 job.status = "running"
                 job.started_at = _now()
@@ -141,7 +160,7 @@ class JobManager:
 
     def has_active_job(self, folder_id: str) -> bool:
         with self._lock:
-            return folder_id in self._active_by_folder
+            return folder_id in self._active_by_folder or bool(self._optimize_folders.get(folder_id))
 
     # --- internals ---------------------------------------------------------
 
@@ -159,7 +178,7 @@ class JobManager:
         try:
             proc = subprocess.Popen(
                 job._cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                text=True, bufsize=1, cwd=str(cfg.REPO_ROOT),
+                cwd=str(cfg.REPO_ROOT),
             )
         except OSError as exc:
             job.log.append(f"Erro ao iniciar processo: {exc}")
@@ -173,13 +192,22 @@ class JobManager:
         # ficaria "congelado" até o processo inteiro terminar. Lemos em chunks e
         # splitamos manualmente em \r ou \n pra cada update de progresso virar uma
         # linha de log própria.
+        #
+        # Importante: usar os.read() no fd bruto, não proc.stdout.read(n) — o
+        # TextIOWrapper/BufferedReader do subprocess tenta ENCHER o buffer até n
+        # bytes (ou EOF) antes de retornar, então com saída esparsa (poucos KB ao
+        # longo de minutos, como os echo/tee do transcode-1080p-hevc.sh) ele fica
+        # bloqueado sem devolver nada até o processo inteiro terminar — o log só
+        # aparecia "de uma vez" no final, nunca ao vivo. os.read() é 1 syscall só,
+        # devolve o que tiver disponível na hora (semântica read1).
         buf = ""
         assert proc.stdout is not None
+        fd = proc.stdout.fileno()
         while True:
-            chunk = proc.stdout.read(4096)
+            chunk = os.read(fd, 4096)
             if not chunk:
                 break
-            buf += chunk
+            buf += chunk.decode("utf-8", errors="replace")
             *complete_lines, buf = re.split(r"[\r\n]+", buf)
             for line in complete_lines:
                 if line:
@@ -199,14 +227,20 @@ class JobManager:
         with self._lock:
             if self._active_by_folder.get(job.folder_id) is job:
                 del self._active_by_folder[job.folder_id]
-            if job.type == "optimize" and self._optimize_running is job:
-                self._optimize_running = None
-                if self._optimize_queue:
-                    next_job = self._optimize_queue.popleft()
-                    next_job.status = "running"
-                    next_job.started_at = _now()
-                    self._optimize_running = next_job
-                    self._spawn(next_job)
+            if job.type == "optimize":
+                folder_jobs = self._optimize_folders.get(job.folder_id)
+                if folder_jobs:
+                    folder_jobs.discard(job.id)
+                    if not folder_jobs:
+                        del self._optimize_folders[job.folder_id]
+                if self._optimize_running is job:
+                    self._optimize_running = None
+                    if self._optimize_queue:
+                        next_job = self._optimize_queue.popleft()
+                        next_job.status = "running"
+                        next_job.started_at = _now()
+                        self._optimize_running = next_job
+                        self._spawn(next_job)
 
     def _save_calibration(self, job: Job) -> None:
         assert job.sample_meta is not None

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
-import { api } from '../api/client'
+import { api, ApiError } from '../api/client'
 import { useFolders } from '../hooks/useFolders'
 import { useFolderFiles } from '../hooks/useFolderFiles'
 import { useJobsPolling } from '../hooks/useJobsPolling'
@@ -16,6 +16,7 @@ export function FolderPage() {
 
   const [trackedJobIds, setTrackedJobIds] = useState<string[]>([])
   const [optimizedPaths, setOptimizedPaths] = useState<Set<string>>(new Set())
+  const [actionError, setActionError] = useState<string | null>(null)
   const jobs = useJobsPolling(trackedJobIds)
 
   const folder = folders.find((f) => f.id === folderId)
@@ -30,12 +31,17 @@ export function FolderPage() {
     })
   }, [folderId])
 
-  const activeJob = trackedJobIds.map((id) => jobs[id]).find((j) => j && (j.status === 'running' || j.status === 'queued'))
+  const trackedJobs = trackedJobIds.map((id) => jobs[id]).filter((j) => j !== undefined)
+  const analyzeJob = trackedJobs.find((j) => j.type === 'analyze' && (j.status === 'running' || j.status === 'queued'))
+  const activeOptimizeJobs = trackedJobs.filter(
+    (j) => j.type === 'optimize' && (j.status === 'running' || j.status === 'queued'),
+  )
+  // a pasta não aceita Atualizar enquanto está sendo analisada OU tem otimização pendente
+  // (mesma regra do backend) — mas "Otimizar" continua liberado linha a linha.
+  const analyzeBlocked = Boolean(analyzeJob) || activeOptimizeJobs.length > 0
 
   useEffect(() => {
-    for (const id of trackedJobIds) {
-      const job = jobs[id]
-      if (!job) continue
+    for (const job of trackedJobs) {
       if (job.status === 'succeeded' && job.type === 'analyze') refetch()
       if (job.status === 'succeeded' && job.type === 'optimize' && job.file_path) {
         setOptimizedPaths((prev) => new Set(prev).add(job.file_path!))
@@ -46,15 +52,25 @@ export function FolderPage() {
 
   async function handleAnalyze() {
     if (!folderId) return
-    const { job_id } = await api.analyzeFolder(folderId)
-    setTrackedJobIds((prev) => [...prev, job_id])
+    setActionError(null)
+    try {
+      const { job_id } = await api.analyzeFolder(folderId)
+      setTrackedJobIds((prev) => [...prev, job_id])
+    } catch (err) {
+      setActionError(err instanceof ApiError ? err.message : 'erro ao atualizar pasta')
+    }
   }
 
   async function handleOptimize(row: FileRow) {
     if (!folderId) return
     if (!confirm(`Otimizar "${row.filename}"? Isso substitui o arquivo original depois de validar o resultado.`)) return
-    const { job_id } = await api.optimizeFile(folderId, row.path)
-    setTrackedJobIds((prev) => [...prev, job_id])
+    setActionError(null)
+    try {
+      const { job_id } = await api.optimizeFile(folderId, row.path)
+      setTrackedJobIds((prev) => [...prev, job_id])
+    } catch (err) {
+      setActionError(err instanceof ApiError ? err.message : 'erro ao otimizar arquivo')
+    }
   }
 
   const columns: Column<FileRow>[] = useMemo(
@@ -84,7 +100,8 @@ export function FolderPage() {
   if (error) return <p className="error">Erro: {error}</p>
   if (!data) return null
 
-  const folderBusy = Boolean(activeJob)
+  const runningCount = activeOptimizeJobs.filter((j) => j.status === 'running').length
+  const queuedCount = activeOptimizeJobs.filter((j) => j.status === 'queued').length
 
   return (
     <div className="page">
@@ -96,21 +113,25 @@ export function FolderPage() {
             Última análise: {formatDateTime(data.generated_at)} · {data.rows.length} arquivo(s)
           </p>
         </div>
-        <button onClick={handleAnalyze} disabled={folderBusy}>
-          {activeJob?.type === 'analyze' ? 'Analisando…' : 'Atualizar'}
+        <button onClick={handleAnalyze} disabled={analyzeBlocked}>
+          {analyzeJob ? 'Analisando…' : 'Atualizar'}
         </button>
       </div>
 
-      {activeJob && (
+      {analyzeJob && (
         <div className="job-banner">
-          <JobStatusBadge status={activeJob.status} />
+          <JobStatusBadge status={analyzeJob.status} />
+          <span>Reanalisando pasta…</span>
+        </div>
+      )}
+      {activeOptimizeJobs.length > 0 && (
+        <div className="job-banner">
           <span>
-            {activeJob.type === 'analyze'
-              ? 'Reanalisando pasta…'
-              : `Otimizando ${activeJob.file_path?.split('/').pop()}…`}
+            Otimizando: {runningCount} rodando · {queuedCount} na fila
           </span>
         </div>
       )}
+      {actionError && <p className="error">{actionError}</p>}
 
       {data.rows.length === 0 ? (
         <p className="hint">Ainda não foi analisada. Clique em Atualizar.</p>
@@ -119,15 +140,22 @@ export function FolderPage() {
           columns={columns}
           rows={data.rows}
           rowKey={(row) => row.path}
-          renderActions={(row) =>
-            optimizedPaths.has(row.path) ? (
-              <span className="badge badge-optimized">Otimizado — clique Atualizar</span>
-            ) : (
-              <button onClick={() => handleOptimize(row)} disabled={folderBusy}>
+          renderActions={(row) => {
+            if (optimizedPaths.has(row.path)) {
+              return <span className="badge badge-optimized">Otimizado — clique Atualizar</span>
+            }
+            const rowJob = trackedJobs.find(
+              (j) => j.type === 'optimize' && j.file_path === row.path && (j.status === 'running' || j.status === 'queued'),
+            )
+            if (rowJob) {
+              return <JobStatusBadge status={rowJob.status} />
+            }
+            return (
+              <button onClick={() => handleOptimize(row)} disabled={Boolean(analyzeJob)}>
                 Otimizar
               </button>
             )
-          }
+          }}
         />
       )}
     </div>

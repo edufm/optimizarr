@@ -86,7 +86,7 @@ def analyze_folder(folder_id: str) -> JobCreated:
             speed_factor=calibration["speed_factor"] if calibration else None,
         )
     except job_manager.JobConflict:
-        raise HTTPException(409, "pasta já tem job ativo")
+        raise HTTPException(409, "pasta já está sendo analisada ou tem otimização pendente")
     return JobCreated(job_id=job.id, status=job.status)
 
 
@@ -109,6 +109,8 @@ def optimize_file(folder_id: str, body: OptimizeRequest) -> JobCreated:
             resolution=settings["resolution"], fps=settings["fps"],
             encoder=settings["encoder"], quality=settings["quality"],
         )
-    except job_manager.JobConflict:
-        raise HTTPException(409, "pasta já tem job ativo")
+    except job_manager.JobConflict as exc:
+        if exc.reason == "file":
+            raise HTTPException(409, "esse arquivo já está na fila ou sendo otimizado")
+        raise HTTPException(409, "pasta está sendo analisada agora, aguarde terminar")
     return JobCreated(job_id=job.id, status=job.status)
