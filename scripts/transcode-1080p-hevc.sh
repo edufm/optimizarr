@@ -64,8 +64,7 @@ fi
 
 LONG_EDGE=$(awk "BEGIN{printf \"%d\", $RESOLUTION * 16 / 9}")
 
-LOG="$HOME/scripts/transcode-1080p-hevc.$(date +%Y%m%d-%H%M%S).log"
-mkdir -p "$(dirname "$LOG")"
+LOG="${TMPDIR:-/tmp}/transcode-1080p-hevc.$(date +%Y%m%d-%H%M%S).log"
 echo "Log: $LOG"
 
 # --- decide o modo de encode ---
