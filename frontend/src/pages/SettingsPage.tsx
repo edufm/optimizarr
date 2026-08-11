@@ -3,6 +3,7 @@ import { useFolders } from '../hooks/useFolders'
 import { useJobsPolling } from '../hooks/useJobsPolling'
 import { api, ApiError } from '../api/client'
 import { JobStatusBadge } from '../components/JobStatusBadge'
+import { ProgressBar } from '../components/ProgressBar'
 import { formatDateTime } from '../utils/format'
 import type { Calibration, Settings } from '../api/types'
 
@@ -219,7 +220,11 @@ export function SettingsPage() {
         </form>
         {sampleJob && (
           <div className="job-banner">
-            <JobStatusBadge status={sampleJob.status} />
+            {sampleJob.status === 'running' && sampleJob.progress_pct !== null ? (
+              <ProgressBar pct={sampleJob.progress_pct} />
+            ) : (
+              <JobStatusBadge status={sampleJob.status} />
+            )}
             <span>Rodando teste de encoder…</span>
           </div>
         )}

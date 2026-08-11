@@ -6,6 +6,7 @@ import { useFolderFiles } from '../hooks/useFolderFiles'
 import { useJobsPolling } from '../hooks/useJobsPolling'
 import { SortableTable, type Column } from '../components/SortableTable'
 import { JobStatusBadge } from '../components/JobStatusBadge'
+import { ProgressBar } from '../components/ProgressBar'
 import { formatBytes, formatDateTime, formatPercent } from '../utils/format'
 import type { FileRow } from '../api/types'
 
@@ -148,6 +149,9 @@ export function FolderPage() {
               (j) => j.type === 'optimize' && j.file_path === row.path && (j.status === 'running' || j.status === 'queued'),
             )
             if (rowJob) {
+              if (rowJob.status === 'running' && rowJob.progress_pct !== null) {
+                return <ProgressBar pct={rowJob.progress_pct} />
+              }
               return <JobStatusBadge status={rowJob.status} />
             }
             return (

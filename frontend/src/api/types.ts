@@ -98,6 +98,7 @@ export interface Job {
   started_at: string | null
   finished_at: string | null
   returncode: number | null
+  progress_pct: number | null
   log_tail: string[]
 }
 

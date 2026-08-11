@@ -258,6 +258,26 @@ input {
   background: var(--accent);
 }
 
+.inline-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 110px;
+}
+
+.meter-compact {
+  flex: 1;
+  margin: 0;
+  height: 6px;
+}
+
+.meter-label {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  min-width: 2.5em;
+  text-align: right;
+}
+
 /* --- formulários --- */
 
 .inline-form {
