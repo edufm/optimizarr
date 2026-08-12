@@ -86,7 +86,7 @@ export interface FolderFiles {
 }
 
 export type JobType = 'analyze' | 'optimize' | 'sample'
-export type JobStatus = 'queued' | 'running' | 'succeeded' | 'failed'
+export type JobStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled'
 
 export interface Job {
   id: string

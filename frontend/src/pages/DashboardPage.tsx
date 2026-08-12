@@ -1,10 +1,29 @@
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useDashboard } from '../hooks/useDashboard'
+import { useFolders } from '../hooks/useFolders'
+import { useOptimizeQueue } from '../hooks/useOptimizeQueue'
+import { api, ApiError } from '../api/client'
 import { DiskUsageCard } from '../components/DiskUsageCard'
 import { FolderSummaryCard } from '../components/FolderSummaryCard'
+import { OptimizeQueueList } from '../components/OptimizeQueueList'
 
 export function DashboardPage() {
   const { dashboard, loading, error } = useDashboard()
+  const { folders } = useFolders()
+  const { jobs: queueJobs, refetch: refetchQueue } = useOptimizeQueue()
+  const [cancelError, setCancelError] = useState<string | null>(null)
+
+  async function handleCancel(jobId: string) {
+    if (!confirm('Cancelar esse item da fila? Ele ainda não foi iniciado.')) return
+    setCancelError(null)
+    try {
+      await api.cancelJob(jobId)
+      refetchQueue()
+    } catch (err) {
+      setCancelError(err instanceof ApiError ? err.message : 'erro ao cancelar')
+    }
+  }
 
   if (loading) return <p className="hint">Carregando…</p>
   if (error) return <p className="error">Erro: {error}</p>
@@ -13,6 +32,14 @@ export function DashboardPage() {
   return (
     <div className="page">
       <h1>Dashboard</h1>
+
+      {queueJobs.length > 0 && (
+        <section>
+          <h2>Fila de otimização</h2>
+          {cancelError && <p className="error">{cancelError}</p>}
+          <OptimizeQueueList jobs={queueJobs} folders={folders} onCancel={handleCancel} />
+        </section>
+      )}
 
       {dashboard.disks.length > 0 && (
         <section>

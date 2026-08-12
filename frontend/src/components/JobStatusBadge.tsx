@@ -5,6 +5,7 @@ const LABELS: Record<JobStatus, string> = {
   running: 'Rodando',
   succeeded: 'Concluído',
   failed: 'Falhou',
+  cancelled: 'Cancelado',
 }
 
 export function JobStatusBadge({ status }: { status: JobStatus }) {

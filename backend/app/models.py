@@ -109,7 +109,7 @@ class JobOut(BaseModel):
     type: Literal["analyze", "optimize", "sample"]
     folder_id: str
     file_path: str | None = None
-    status: Literal["queued", "running", "succeeded", "failed"]
+    status: Literal["queued", "running", "succeeded", "failed", "cancelled"]
     created_at: datetime
     started_at: datetime | None = None
     finished_at: datetime | None = None

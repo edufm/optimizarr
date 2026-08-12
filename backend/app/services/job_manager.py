@@ -15,7 +15,7 @@ from .. import config as cfg
 from .. import state
 
 JobType = Literal["analyze", "optimize", "sample"]
-JobStatus = Literal["queued", "running", "succeeded", "failed"]
+JobStatus = Literal["queued", "running", "succeeded", "failed", "cancelled"]
 
 _SAMPLE_KEY = "__sample__"  # folder_id sintético só pra reaproveitar o lock de 1-job-por-chave
 _RESULT_RE = re.compile(r"RESULTADO bpp=([\d.]+) speed_factor=([\d.]+)")
@@ -44,6 +44,10 @@ class JobConflict(Exception):
     def __init__(self, key: str, reason: str = "folder") -> None:
         super().__init__(key)
         self.reason = reason
+
+
+class JobNotCancelable(Exception):
+    """Job existe mas não está mais "queued" (já rodando ou já terminou)."""
 
 
 @dataclass
@@ -174,6 +178,25 @@ class JobManager:
     def has_active_job(self, folder_id: str) -> bool:
         with self._lock:
             return folder_id in self._active_by_folder or bool(self._optimize_folders.get(folder_id))
+
+    def cancel(self, job_id: str) -> Job:
+        """Cancela um job ainda "queued" (não iniciado). Na prática só "optimize" fica
+        nesse estado — "analyze"/"sample" ou começam na hora ou levantam JobConflict."""
+        with self._lock:
+            job = self._jobs.get(job_id)
+            if job is None:
+                raise KeyError(job_id)
+            if job.status != "queued":
+                raise JobNotCancelable(job_id)
+            self._optimize_queue = deque(j for j in self._optimize_queue if j.id != job_id)
+            job.status = "cancelled"
+            job.finished_at = _now()
+            folder_jobs = self._optimize_folders.get(job.folder_id)
+            if folder_jobs:
+                folder_jobs.discard(job.id)
+                if not folder_jobs:
+                    del self._optimize_folders[job.folder_id]
+            return job
 
     # --- internals ---------------------------------------------------------
 

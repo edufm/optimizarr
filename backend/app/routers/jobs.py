@@ -36,3 +36,14 @@ def get_job(job_id: str) -> JobOut:
     if job is None:
         raise HTTPException(404, "job não encontrado")
     return _to_out(job)
+
+
+@router.post("/jobs/{job_id}/cancel")
+def cancel_job(job_id: str) -> JobOut:
+    try:
+        job = job_manager.manager.cancel(job_id)
+    except KeyError:
+        raise HTTPException(404, "job não encontrado")
+    except job_manager.JobNotCancelable:
+        raise HTTPException(409, "job não está mais na fila (já iniciado ou finalizado)")
+    return _to_out(job)

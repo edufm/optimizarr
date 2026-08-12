@@ -65,6 +65,7 @@ export const api = {
     const suffix = qs.toString() ? `?${qs}` : ''
     return request<{ jobs: Job[] }>(`/jobs${suffix}`)
   },
+  cancelJob: (id: string) => request<Job>(`/jobs/${id}/cancel`, { method: 'POST' }),
 }
 
 export { ApiError }
