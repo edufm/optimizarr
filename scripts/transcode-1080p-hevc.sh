@@ -135,7 +135,14 @@ for f in "${FILES[@]}"; do
   base_f=$(basename "$f")
   name_noext="${base_f%.*}"
   tmp_out="$dir_f/.tmp_${name_noext}.mkv"
-  final_out="$dir_f/${name_noext}.hevc.mkv"
+  if [[ "$REPLACE" -eq 1 ]]; then
+    # substitui de fato: mantém o nome original, só troca a extensão pra
+    # .mkv quando necessário (o container gerado é sempre Matroska)
+    final_out="$dir_f/${name_noext}.mkv"
+  else
+    # mantém o original intacto do lado, então precisa de um nome diferente
+    final_out="$dir_f/${name_noext}.hevc.mkv"
+  fi
 
   echo "[$i/$TOTAL] CONVERTE ($codec ${width}x${height} -> hevc ${RESOLUTION}p): $f" | tee -a "$LOG"
 
