@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
 
-from ..models import JobOut
+from ..models import JobOut, OptimizeHistoryOut
 from ..services import job_manager
 
 router = APIRouter(tags=["jobs"])
@@ -28,6 +28,12 @@ def _to_out(job: job_manager.Job) -> JobOut:
 def list_jobs(folder_id: str | None = None, active: bool | None = None) -> dict:
     jobs = job_manager.manager.list(folder_id=folder_id, active=active)
     return {"jobs": [_to_out(j) for j in jobs]}
+
+
+@router.get("/jobs/history", response_model=OptimizeHistoryOut)
+def job_history(limit: int = 10) -> OptimizeHistoryOut:
+    entries, has_more = job_manager.manager.history(limit)
+    return OptimizeHistoryOut(entries=entries, has_more=has_more)
 
 
 @router.get("/jobs/{job_id}")

@@ -114,6 +114,25 @@ class JobOut(BaseModel):
     log_tail: list[str] = []
 
 
+class OptimizeHistoryEntry(BaseModel):
+    id: str
+    folder_id: str
+    file_path: str | None
+    status: Literal["succeeded", "failed", "cancelled"]
+    created_at: datetime
+    started_at: datetime | None
+    finished_at: datetime | None
+    duration_s: float | None
+    size_before: int | None
+    size_after: int | None
+    savings_pct: float | None
+
+
+class OptimizeHistoryOut(BaseModel):
+    entries: list[OptimizeHistoryEntry]
+    has_more: bool
+
+
 class JobCreated(BaseModel):
     job_id: str
     status: Literal["queued", "running"]

@@ -13,6 +13,7 @@ from uuid import uuid4
 
 from .. import config as cfg
 from .. import state
+from . import history_store
 
 JobType = Literal["analyze", "optimize", "sample"]
 JobStatus = Literal["queued", "running", "succeeded", "failed", "cancelled"]
@@ -64,6 +65,7 @@ class Job:
     progress_pct: float | None = None
     log: deque[str] = field(default_factory=lambda: deque(maxlen=500))
     sample_meta: dict | None = None  # só em jobs "sample": encoder/quality/resolution/fps/paths usados
+    size_before: int | None = None  # só em jobs "optimize": tamanho do arquivo antes de otimizar
     _cmd: list[str] = field(default_factory=list, repr=False)
 
     def log_tail(self, n: int = 200) -> list[str]:
@@ -129,6 +131,10 @@ class JobManager:
                    for j in self._jobs.values()):
                 raise JobConflict(file_path, reason="file")  # esse arquivo já está na fila/rodando
             job = self._new_job("optimize", folder_id, file_path, cmd)
+            try:
+                job.size_before = os.path.getsize(file_path)
+            except OSError:
+                job.size_before = None
             self._optimize_folders.setdefault(folder_id, set()).add(job.id)
             if self._optimize_running is None:
                 job.status = "running"
@@ -175,6 +181,9 @@ class JobManager:
         jobs.sort(key=lambda j: j.created_at, reverse=True)
         return jobs
 
+    def history(self, limit: int) -> tuple[list[dict], bool]:
+        return history_store.read_recent(limit)
+
     def has_active_job(self, folder_id: str) -> bool:
         with self._lock:
             return folder_id in self._active_by_folder or bool(self._optimize_folders.get(folder_id))
@@ -196,6 +205,7 @@ class JobManager:
                 folder_jobs.discard(job.id)
                 if not folder_jobs:
                     del self._optimize_folders[job.folder_id]
+            self._record_history(job)
             return job
 
     # --- internals ---------------------------------------------------------
@@ -273,6 +283,8 @@ class JobManager:
     def _on_finished(self, job: Job) -> None:
         if job.type == "sample" and job.status == "succeeded":
             self._save_calibration(job)
+        if job.type == "optimize":
+            self._record_history(job)
         with self._lock:
             if self._active_by_folder.get(job.folder_id) is job:
                 del self._active_by_folder[job.folder_id]
@@ -290,6 +302,35 @@ class JobManager:
                         next_job.started_at = _now()
                         self._optimize_running = next_job
                         self._spawn(next_job)
+
+    def _record_history(self, job: Job) -> None:
+        """Grava o resultado de um job "optimize" terminado no log persistente —
+        diferente de self._jobs, sobrevive a reinício/redeploy do backend."""
+        size_after = None
+        savings_pct = None
+        if job.status == "succeeded" and job.file_path:
+            try:
+                size_after = os.path.getsize(job.file_path)
+            except OSError:
+                size_after = None
+            if job.size_before and size_after is not None:
+                savings_pct = 100 * (1 - size_after / job.size_before)
+        duration_s = None
+        if job.started_at and job.finished_at:
+            duration_s = (job.finished_at - job.started_at).total_seconds()
+        history_store.append({
+            "id": job.id,
+            "folder_id": job.folder_id,
+            "file_path": job.file_path,
+            "status": job.status,
+            "created_at": job.created_at.isoformat(),
+            "started_at": job.started_at.isoformat() if job.started_at else None,
+            "finished_at": job.finished_at.isoformat() if job.finished_at else None,
+            "duration_s": duration_s,
+            "size_before": job.size_before,
+            "size_after": size_after,
+            "savings_pct": savings_pct,
+        })
 
     def _save_calibration(self, job: Job) -> None:
         assert job.sample_meta is not None

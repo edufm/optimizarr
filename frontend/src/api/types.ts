@@ -102,3 +102,22 @@ export interface JobCreated {
   job_id: string
   status: JobStatus
 }
+
+export interface OptimizeHistoryEntry {
+  id: string
+  folder_id: string
+  file_path: string | null
+  status: 'succeeded' | 'failed' | 'cancelled'
+  created_at: string
+  started_at: string | null
+  finished_at: string | null
+  duration_s: number | null
+  size_before: number | null
+  size_after: number | null
+  savings_pct: number | null
+}
+
+export interface OptimizeHistoryOut {
+  entries: OptimizeHistoryEntry[]
+  has_more: boolean
+}

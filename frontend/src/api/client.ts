@@ -5,6 +5,7 @@ import type {
   FolderFiles,
   Job,
   JobCreated,
+  OptimizeHistoryOut,
   Settings,
 } from './types'
 
@@ -66,6 +67,7 @@ export const api = {
     return request<{ jobs: Job[] }>(`/jobs${suffix}`)
   },
   cancelJob: (id: string) => request<Job>(`/jobs/${id}/cancel`, { method: 'POST' }),
+  getJobHistory: (limit: number) => request<OptimizeHistoryOut>(`/jobs/history?limit=${limit}`),
 }
 
 export { ApiError }
