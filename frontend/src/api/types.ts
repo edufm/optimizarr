@@ -73,10 +73,6 @@ export interface FileRow {
   gb_per_hour: number
   profile: string
   pix_fmt: string
-  color_space: string
-  color_transfer: string
-  color_primaries: string
-  field_order: string
 }
 
 export interface FolderFiles {

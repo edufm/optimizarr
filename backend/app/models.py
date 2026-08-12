@@ -88,10 +88,6 @@ class FileRow(BaseModel):
     gb_per_hour: float
     profile: str
     pix_fmt: str
-    color_space: str
-    color_transfer: str
-    color_primaries: str
-    field_order: str
 
 
 class FolderFilesOut(BaseModel):

@@ -58,7 +58,7 @@ def ffprobe(path: Path):
         "-show_entries", "format=duration,size",
         "-show_entries",
         "stream=codec_name,codec_type,width,height,avg_frame_rate,r_frame_rate,bit_rate,"
-        "profile,pix_fmt,color_space,color_transfer,color_primaries,field_order",
+        "profile,pix_fmt",
         str(path),
     ]
     try:
@@ -153,10 +153,6 @@ def analyze_file(path: Path, resolution: int, long_edge: int, fps_target: float,
         "gb_per_hour": gb_per_hour,
         "profile": video_stream.get("profile", ""),
         "pix_fmt": video_stream.get("pix_fmt", ""),
-        "color_space": video_stream.get("color_space", ""),
-        "color_transfer": video_stream.get("color_transfer", ""),
-        "color_primaries": video_stream.get("color_primaries", ""),
-        "field_order": video_stream.get("field_order", ""),
     }
 
 
@@ -210,7 +206,7 @@ def main():
             results.append(r)
     print(file=sys.stderr)
 
-    results.sort(key=lambda r: r["savings"], reverse=True)
+    results.sort(key=lambda r: r["savings_gb"], reverse=True)
 
     worth_it = [r for r in results if r["savings"] >= args.min_savings]
     marginal = [r for r in results if r["savings"] < args.min_savings]
@@ -244,12 +240,10 @@ def main():
     if args.csv:
         with open(args.csv, "w", newline="") as f:
             w = csv.writer(f)
-            w.writerow(["arquivo", "largura", "altura", "codec", "profile", "pix_fmt", "color_space",
-                        "color_transfer", "color_primaries", "field_order", "fps", "duracao_s", "tamanho_bytes",
-                        "gb_por_hora", "bpp", "estimado_bytes", "ganho_pct", "ganho_gb"])
+            w.writerow(["arquivo", "largura", "altura", "codec", "profile", "pix_fmt", "fps", "duracao_s",
+                        "tamanho_bytes", "gb_por_hora", "bpp", "estimado_bytes", "ganho_pct", "ganho_gb"])
             for r in results:
                 w.writerow([str(r["path"]), r["width"], r["height"], r["codec"], r["profile"], r["pix_fmt"],
-                            r["color_space"], r["color_transfer"], r["color_primaries"], r["field_order"],
                             f"{r['fps']:.2f}", f"{r['duration']:.1f}", r["size"], f"{r['gb_per_hour']:.3f}",
                             f"{r['bpp']:.4f}", f"{r['est_size']:.0f}", f"{r['savings']:.1f}", f"{r['savings_gb']:.3f}"])
         print(f"\nCSV salvo em {args.csv}")

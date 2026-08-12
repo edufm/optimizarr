@@ -21,6 +21,13 @@ export function formatDuration(seconds: number): string {
   return `${m}m${String(s).padStart(2, '0')}s`
 }
 
+export function formatDurationHms(seconds: number): string {
+  const h = Math.floor(seconds / 3600)
+  const m = Math.floor((seconds % 3600) / 60)
+  const s = Math.floor(seconds % 60)
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+}
+
 export function formatDateTime(iso: string | null): string {
   if (!iso) return '—'
   return new Date(iso).toLocaleString('pt-BR')

@@ -7,7 +7,7 @@ import { useJobsPolling } from '../hooks/useJobsPolling'
 import { SortableTable, type Column } from '../components/SortableTable'
 import { JobStatusBadge } from '../components/JobStatusBadge'
 import { ProgressBar } from '../components/ProgressBar'
-import { formatBytes, formatDateTime, formatPercent } from '../utils/format'
+import { formatBytes, formatDateTime, formatDurationHms, formatPercent } from '../utils/format'
 import type { FileRow } from '../api/types'
 
 export function FolderPage() {
@@ -78,21 +78,17 @@ export function FolderPage() {
     () => [
       { key: 'filename', label: 'Arquivo' },
       { key: 'codec', label: 'Codec' },
+      { key: 'profile', label: 'Profile' },
+      { key: 'pix_fmt', label: 'Pix fmt' },
       { key: 'width', label: 'Largura', align: 'right' },
       { key: 'height', label: 'Altura', align: 'right' },
       { key: 'fps', label: 'FPS', align: 'right', format: (v) => (v as number).toFixed(2) },
-      { key: 'duration', label: 'Duração (s)', align: 'right', format: (v) => (v as number).toFixed(0) },
+      { key: 'duration', label: 'Duração', align: 'right', format: (v) => formatDurationHms(v as number) },
       { key: 'size', label: 'Tamanho', align: 'right', format: (v) => formatBytes(v as number) },
-      { key: 'bpp', label: 'BPP', align: 'right', format: (v) => (v as number).toFixed(3) },
       { key: 'gb_per_hour', label: 'GB/h', align: 'right', format: (v) => (v as number).toFixed(2) },
+      { key: 'bpp', label: 'BPP', align: 'right', format: (v) => (v as number).toFixed(3) },
       { key: 'savings', label: 'Ganho', align: 'right', format: (v) => formatPercent(v as number) },
       { key: 'savings_gb', label: 'Ganho GB', align: 'right', format: (v) => (v as number).toFixed(2) },
-      { key: 'profile', label: 'Profile' },
-      { key: 'pix_fmt', label: 'Pix fmt' },
-      { key: 'color_space', label: 'Color space' },
-      { key: 'color_transfer', label: 'Color transfer' },
-      { key: 'color_primaries', label: 'Color primaries' },
-      { key: 'field_order', label: 'Field order' },
     ],
     [],
   )
