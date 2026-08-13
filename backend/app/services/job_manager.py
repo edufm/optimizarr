@@ -8,6 +8,7 @@ import threading
 from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Literal
 from uuid import uuid4
 
@@ -309,8 +310,12 @@ class JobManager:
         size_after = None
         savings_pct = None
         if job.status == "succeeded" and job.file_path:
+            # transcode-1080p-hevc.sh --replace sempre grava o resultado como .mkv,
+            # mesmo quando o original tinha outra extensão (ex: .mp4) — job.file_path
+            # continua sendo o caminho original, que não existe mais nesse ponto.
+            final_path = Path(job.file_path).with_suffix(".mkv")
             try:
-                size_after = os.path.getsize(job.file_path)
+                size_after = os.path.getsize(final_path)
             except OSError:
                 size_after = None
             if job.size_before and size_after is not None:
